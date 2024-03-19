@@ -3,3 +3,6 @@ __pycache__/
 *.txt
 var/ramble/cache
 var/ramble/workspaces
+*/logs
+*/software
+*/experiments
