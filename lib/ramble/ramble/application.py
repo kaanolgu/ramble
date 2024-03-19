@@ -287,6 +287,7 @@ class ApplicationBase(object, metaclass=ApplicationMeta):
             for var, conf in self.workload_variables[workload_name].items():
                 if 'expandable' in conf and not conf['expandable']:
                     self.no_expand_vars.add(var)
+
         self.expander.set_no_expand_vars(self.no_expand_vars)
 
     def set_internals(self, internals):
@@ -702,6 +703,12 @@ class ApplicationBase(object, metaclass=ApplicationMeta):
         # (note: the base ramble variables are checked earlier too)
         self.keywords.check_required_keys(self.variables)
 
+        # Ensure no expand vars are set correctly for modifiers
+        for mod_inst in self._modifier_instances:
+            for var in mod_inst.no_expand_vars():
+                self.expander.add_no_expand_var(var)
+                mod_inst.expander.add_no_expand_var(var)
+
     def define_modifier_variables(self):
         """Extract default variable definitions from modifier instances"""
 
@@ -735,12 +742,15 @@ class ApplicationBase(object, metaclass=ApplicationMeta):
         if namespace.executables in self.internals:
             exec_order = self.internals[namespace.executables]
 
+        builtin_objects = [self]
         all_builtins = [self.builtins]
         for mod_inst in self._modifier_instances:
+            builtin_objects.append(mod_inst)
             all_builtins.append(mod_inst.builtins)
 
         executable_graph = ramble.graphs.ExecutableGraph(exec_order, self.executables,
-                                                         all_builtins, self)
+                                                         builtin_objects, all_builtins,
+                                                         self)
 
         # Perform executable injection
         if namespace.executable_injection in self.internals:
@@ -872,7 +882,7 @@ class ApplicationBase(object, metaclass=ApplicationMeta):
 
             else:  # All Builtins
                 func = exec_node.attribute
-                func_cmds = func(self)
+                func_cmds = func()
                 for cmd in func_cmds:
                     self._command_list.append(self.expander.expand_var(cmd, exec_vars))
 
