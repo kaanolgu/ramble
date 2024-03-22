@@ -17,7 +17,7 @@ class Babelstream(SpackApplication):
     """
     name = "babelstream"
 
-    tags('sycl','sycl2020','omp','cuda','ocl','tbb','acc','hip','thrust','raja','std','kokkos')
+    tags('babelstream')
 
     maintainers('kaanolgu','rfbgo','douglasjacobsen','tomdeakin')
 

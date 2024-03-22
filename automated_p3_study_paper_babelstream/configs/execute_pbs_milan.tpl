@@ -1,9 +1,9 @@
 #!/bin/bash -l
-#PBS -N rmb_{application_name}_{partition_per_model}_{{partition_per_model}}
+#PBS -N rmb_{application_name}_{partition}_{{partition}}
 #PBS -o pbs-logs/
 #PBS -e pbs-logs/
 #PBS -l walltime=0:15:0
-#PBS -l select=1:mpiprocs=1:ncpus={{partition_per_model}}:mem=100g
+#PBS -l select=1:mpiprocs=1:ncpus={{partition}}:mem=100g
 #PBS -q {partition}q
 #
 # Variables surrounded by curly braces will be expanded

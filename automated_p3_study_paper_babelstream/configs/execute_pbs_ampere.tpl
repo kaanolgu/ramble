@@ -1,10 +1,11 @@
 #!/bin/bash -l
-#PBS -N rmb_{application_name}_{partition_per_model}_{{partition_per_model}}
+#PBS -N rmb_{application_name}_{partition}_{{partition}}
 #PBS -o pbs-logs/
 #PBS -e pbs-logs/
-#PBS -l walltime=0:5:0
-#PBS -l select=1:mpiprocs=1:ncpus={{partition_per_model}}:ngpus=1:mem=10g
-#PBS -q {partition}q
+#PBS -l walltime=0:15:0
+#PBS -l select=1:mpiprocs=1:ncpus={{partition}}:ngpus=1:mem=20g
+#PBS -q R35870
+
 #
 # Variables surrounded by curly braces will be expanded
 # when generating a specific execution script.
