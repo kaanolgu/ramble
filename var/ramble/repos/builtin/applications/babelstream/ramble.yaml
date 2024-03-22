@@ -1,0 +1,480 @@
+# This is a ramble workspace config file.
+#
+# It describes the experiments, the software stack
+# and all variables required for ramble to configure
+# experiments.
+# As an example, experiments can be defined as follows.
+# applications:
+#   variables:
+#     processes_per_node: '30'
+#   hostname: # Application name, as seen in `ramble list`
+#     variables:
+#       iterations: '5'
+#     workloads:
+#       serial: # Workload name, as seen in `ramble info <app>`
+#         variables:
+#           type: 'test'
+#         experiments:
+#           single_node: # Arbitrary experiment name
+#             variables:
+#               n_ranks: '{processes_per_node}'
+
+########################################################
+# Notes
+# TBB : static doesn't work well for milan; use auto for comparison with std-*
+# THRUST: rocm-5.4.0 does not exist on isambard-phase3:instinct nodes
+
+ramble:
+  # repos:
+  # - configs/app_repo
+  env_vars:
+    set:
+      OMP_PLACES: 'cores'
+      OMP_PROC_BIND: true
+      OMP_NUM_THREADS: '{{partition_per_model}}'
+      ACC_NUM_CORES: '{{partition_per_model}}'
+      # OMP_TARGET_OFFLOAD:'{}'
+  variables:
+    mpi_command: mpiexec -n {processes_per_node}
+    amd_gpu_target: 'gfx908'
+    cuda_arch: '80'
+    ######################
+    raja_dir: '/lustre/home/br-kolgu/RAJA/'
+    kokkos_dir: '/lustre/home/br-kolgu/kokkos-4.1.00/'
+    launch_oneapi: '/lustre/software/x86/tools/oneapi-2023.2.0/setvars.sh'
+    ######################
+    # defined number of processors = num_sockets*num_cores*num_cpus_per_core
+    # TODO: dictionary of num_processors and accesss via num_processors[milan]
+    ########################
+    milan: '256' #num_cpus
+    ampere: '64' #num_cpus
+    instinct: '64' #num_cpus
+    #########################
+    batch_system: pbs
+    batch_submit: 'qsub {execute_pbs_{partition}}'
+
+
+  applications:
+    babelstream:
+      workloads:
+        cpp-models:
+          variables:
+              processes_per_node: '1' # just a placeholder 
+              n_nodes: ['1'] # just a placeholder
+          experiments:
+            'acc_experiments_{stream_models}-{compiler_list}':
+              variables:
+                stream_models:
+                  - 'acc_gcc'
+                  - 'acc_nvhpc'
+                  - 'multicore'
+                  - 'gpu'
+                stream_variants:
+                  - '+acc'
+                  - '+acc'
+                  - '+acc cpu_arch=zen3'
+                  - '+acc +cuda cuda_arch={cuda_arch}'
+                compiler_list:
+                  - gcc12
+                  - nvhpc23
+                  - nvhpc23
+                  - nvhpc23
+                stream_exec_name: 'acc-stream'
+                partition_per_model: 
+                - 'milan'
+                - 'milan'
+                - 'milan'
+                - 'ampere'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              # matrix:
+                # - compiler_list
+                # - stream_models
+            'cuda_experiments_{stream_models}-{compiler_list}':
+              variables:
+                stream_models:
+                  - 'cuda'
+                  - 'cuda_managed'
+                  - 'cuda_pagefault'
+                stream_variants:
+                  - '+cuda ~thrust cuda_arch={cuda_arch} cuda_memory_mode=default'
+                  - '+cuda ~thrust cuda_arch={cuda_arch} cuda_memory_mode=managed'
+                  - '+cuda ~thrust cuda_arch={cuda_arch} cuda_memory_mode=pagefault'
+                compiler_list:
+                  - gcc12
+                  - nvhpc23
+                stream_exec_name: 'cuda-stream'
+                partition_per_model: 'ampere'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              matrix:
+                - compiler_list
+                # - stream_models
+            'hip_experiments_{stream_models}-{compiler_list}':
+              variables:
+                stream_models:
+                  - 'hip'
+                  - 'hip_managed'
+                  - 'hip_pagefault'
+                stream_variants:
+                  - '+hip amdgpu_target={amd_gpu_target}'
+                  - '+hip amdgpu_target={amd_gpu_target} hip_mem_mode=managed'
+                  - '+hip amdgpu_target={amd_gpu_target} hip_mem_mode=pagefault'
+                compiler_list:
+                  - gcc12
+                stream_exec_name: 'hip-stream'
+                partition: 'instinct'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                n_nodes: 1
+              matrix:
+                - compiler_list
+                # - stream_models
+            'kokkos_experiments_{stream_models}-{compiler_list}':
+              variables:
+                stream_models:
+                  - 'kokkos_cuda'
+                  - 'kokkos_omp'
+                stream_variants:
+                  - '+kokkos dir={kokkos_dir} kokkos_backend=cuda +cuda cuda_arch={cuda_arch}'
+                  - '+kokkos dir={kokkos_dir} kokkos_backend=omp'
+                compiler_list:
+                  - nvhpc23
+                  - gcc12
+                stream_exec_name: 'kokkos-stream'
+                partition: 
+                - 'ampere'
+                - 'milan'
+                exec_pre: 'numactl --physcpubind=all --localalloc'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                n_nodes: 1
+              # matrix:
+              #   - compiler_list
+                # - stream_models
+            'omp_experiments_{stream_models}-{compiler_list}-{partition_per_model}':
+              variables:
+                stream_models:
+                  - 'omp_cuda'
+                  - 'omp_amd'
+                  - 'omp'
+                stream_variants:
+                  - '+omp +cuda cuda_arch={cuda_arch}'
+                  - '+omp amdgpu_target={amd_gpu_target}'
+                  - '+omp'
+                compiler_list:
+                  - nvhpc23
+                  - rocmcc54
+                  - gcc12
+                stream_exec_name: 'omp-stream'
+                partition_per_model: 
+                  - 'ampere'
+                  - 'instinct'
+                  - 'milan'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              # matrix:
+                # - compiler_list
+                # - stream_models
+            'ocl_experiments_{stream_models}-{compiler_list}-{partition}':
+              variables:
+                stream_models:
+                  - 'ocl_cuda'
+                  - 'ocl_amd'
+                  - 'ocl_intel'
+                stream_variants:
+                  - '+ocl  ocl_backend=cuda'
+                  - '+ocl  ocl_backend=amd'
+                  - '+ocl  ocl_backend=intel'
+                compiler_list:
+                  - nvhpc23
+                  - rocmcc54
+                  - oneapi2023
+                stream_exec_name: 'ocl-stream'
+                partition: 
+                  - 'ampere'
+                  - 'instinct'
+                  - 'milan'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                n_nodes: 1
+              # matrix:
+                # - compiler_list
+                # - stream_models
+            'raja_experiments_{stream_models}-{compiler_list}-{partition}':
+              variables:
+                stream_models:
+                  - 'raja'
+                  - 'raja_nvdia'
+                stream_variants:
+                  - '+raja dir={raja_dir}'
+                  - '+raja dir={raja_dir} raja_offload=nvidia +cuda cuda_arch={cuda_arch}' # raja_nvidia_gcc
+                compiler_list:
+                  - gcc12
+                  - nvhpc23
+                stream_exec_name: 'raja-stream'
+                partition: 
+                  - 'milan'
+                  - 'ampere'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                n_nodes: 1
+              # matrix:
+                # - compiler_list
+                # - stream_models
+   
+            'tbb_experiments_{stream_models}-{compiler_list}':
+              variables:
+                stream_models:
+                  - 'tbb'
+                  - 'tbb_aff'
+                  - 'tbb_stc'
+                  - 'tbb_sim'
+                  - 'tbb_vec'
+                  - 'tbb_vec_aff'
+                  - 'tbb_vec_stc'
+                  - 'tbb_vec_sim'
+                stream_variants:
+                  - '+tbb'                                          
+                  - '+tbb tbb_partitioner=affinity'                 
+                  - '+tbb tbb_partitioner=static'                   
+                  - '+tbb tbb_partitioner=simple'                   
+                  - '+tbb +tbb_use_vector'                          
+                  - '+tbb tbb_partitioner=affinity +tbb_use_vector'  
+                  - '+tbb tbb_partitioner=static +tbb_use_vector'   
+                  - '+tbb tbb_partitioner=simple +tbb_use_vector'   
+                compiler_list:
+                  - gcc12
+                  - oneapi2023
+                stream_exec_name: 'tbb-stream'
+                partition_per_model: 'milan'
+                exec_pre: 'numactl --physcpubind=all --localalloc'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              # zips:
+              #   cuda_zip:
+              #   - stream_models
+              #   - stream_variants
+              matrix:
+                - compiler_list
+                # - stream_models
+            'std_experiments_{stream_models}-{compiler_list}-{partition_per_model}':
+              variables:
+                stream_models:
+                  - 'std_data'
+                  - 'std_indices'
+                  - 'std_indices_cuda'
+                  - 'std_indices_tbb'
+                  - 'std_ranges'
+                stream_variants:
+                  - '+std std_submodel=data'
+                  - '+std std_submodel=indices'
+                  - '+std std_submodel=indices std_offload=nvhpc +cuda cuda_arch={cuda_arch}'
+                  - '+std std_submodel=indices +std_use_tbb'
+                  - '+std std_submodel=ranges +std_use_tbb'  #std_use_tbb for parallel run
+                compiler_list:
+                  - gcc12
+                  - gcc12
+                  - nvhpc23
+                  - gcc12
+                  - gcc12
+                stream_exec_name: 
+                - 'std-data-stream'
+                - 'std-indices-stream'
+                - 'std-indices-stream'
+                - 'std-indices-stream'
+                - 'std-ranges-stream'
+                partition_per_model: 
+                  - 'milan'
+                  - 'milan'
+                  - 'ampere'
+                  - 'milan'
+                  - 'milan'
+                exec_pre: 'numactl --physcpubind=all --localalloc'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+            'sycl_experiments_{stream_models}-{compiler_list}-{partition_per_model}':
+              variables:
+                stream_models:
+                  - 'sycl_icpx'
+                stream_variants:
+                  - '+sycl sycl_compiler_implementation=oneapi-icpx'
+                compiler_list:
+                  - oneapi2023
+                stream_exec_name: 'sycl-stream'
+                partition_per_model: 'milan'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+            'sycl2020_experiments_{stream_models}-{compiler_list}-{partition_per_model}':
+              variables:
+                stream_models:
+                  - 'sycl20_icpx_usm'
+                  - 'sycl20_icpx_acc'
+                stream_variants:
+                  - '+sycl2020 sycl2020_submodel=usm sycl_compiler_implementation=oneapi-icpx'
+                  - '+sycl2020 sycl2020_submodel=acc sycl_compiler_implementation=oneapi-icpx'
+                compiler_list:
+                  - oneapi2023
+                stream_exec_name: 
+                - 'sycl2020-usm-stream'
+                - 'sycl2020-acc-stream'
+                partition_per_model: 'milan'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              matrix:
+              - compiler_list
+
+            'thrust_experiments_{stream_models}-{compiler_list}-{partition_per_model}':
+              variables:
+                stream_models:
+                  - 'thrust_cuda_cuda'
+                  # - 'thrust_cuda_tbb'
+                  # - 'thrust_rocm'
+                stream_variants:
+                  - '+thrust thrust_submodel=cuda thrust_backend=cuda +cuda cuda_arch={cuda_arch}'
+                  # - '+thrust thrust_submodel=cuda thrust_backend=tbb +cuda cuda_arch={cuda_arch}'
+                  # - '+thrust thrust_submodel=rocm amdgpu_target={amd_gpu_target}' 
+                compiler_list:
+                  - gcc12
+                stream_exec_name: 'thrust-stream'
+                partition_per_model: 
+                  - 'ampere'
+                  # - 'ampere'
+                  # - 'instinct'
+                env_name: 'babelstream-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              matrix:
+              - compiler_list
+        fortran-models:
+          variables:
+              processes_per_node: '1' # just a placeholder 
+              n_nodes: ['1'] # just a placeholder
+              f_model: '{stream_variants}' 
+              f_extra: '' # define empty and fill in during the experiments
+          experiments:
+            'gcc_experiments_{stream_models}-{compiler_list}':
+              variables:
+                stream_models: 'fortran_{stream_variants}_{compiler_list}'
+                stream_variants:
+                  - 'Array'
+                  - 'OpenMP'
+                  - 'OpenMPWorkshare'
+                  - 'OpenMPTarget'
+                  - 'OpenMPTargetLoop'
+                  - 'OpenMPTaskloop'
+                  - 'OpenACC'
+                  - 'OpenACCArray'
+                  - 'DoConcurrent'
+                  - 'Sequential'
+                compiler_list:
+                  - gcc12
+                stream_exec_name: 'fortran-gcc-stream'
+                partition_per_model: 'milan'
+                env_name: 'babelstream-fortran-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              matrix:
+                - compiler_list
+            'nvhpc_experiments_{stream_models}-{compiler_list}':
+              variables:
+                stream_models: 'fortran_{stream_variants}_{compiler_list}'
+                stream_variants:
+                  # - 'Array'
+                  - 'OpenMP'
+                  - 'OpenMPWorkshare'
+                  - 'OpenMPTarget'
+                  - 'OpenMPTargetLoop'
+                  # - 'OpenMPTaskloop cuda_arch={cuda_arch}' # not supported
+                  - 'OpenACC'
+                  - 'OpenACCArray'
+                  - 'DoConcurrent'
+                  - 'Sequential' 
+                compiler_list:
+                  - nvhpc23
+                f_extra: 'cuda_arch={cuda_arch}'
+                stream_exec_name: '{stream_models}-stream'
+                partition_per_model: 'ampere'
+                env_name: 'babelstream-fortran-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              matrix:
+                - compiler_list
+            'oneapi_experiments_{stream_models}-{compiler_list}':
+              variables:
+                stream_models: 'fortran_{stream_variants}_{compiler_list}'
+                stream_variants:
+                  - 'Array'
+                  - 'OpenMP'
+                  - 'OpenMPWorkshare'
+                  - 'OpenMPTarget'
+                  - 'OpenMPTargetLoop'
+                  - 'OpenMPTaskloop'
+                  # - 'OpenACC' # not supported
+                  # - 'OpenACCArray' # not supported
+                  - 'DoConcurrent'
+                  - 'Sequential'
+                compiler_list:
+                  - oneapi2023
+                stream_exec_name: '{stream_models}-stream'
+                partition_per_model: 'milan'
+                env_name: 'babelstream-fortran-{stream_models}-{compiler_list}'
+                exec_name: '{stream_exec_name}'
+                partition: '{partition_per_model}'
+                n_nodes: 1
+              matrix:
+                - compiler_list
+
+  spack:
+    concretized: True
+    # concretizer:
+      # unify: False
+    packages:
+      gcc8:
+        spack_spec: gcc@8.5.0
+        compiler_spec: gcc@8.5.0
+      gcc12:
+        spack_spec: gcc@12.2.0
+        compiler_spec: gcc@12.2.0
+      nvhpc23:
+        spack_spec: nvhpc@23.5
+        compiler_spec: nvhpc@=23.5
+      oneapi2023:
+        spack_spec: oneapi@=2023.2.0
+        compiler_spec: oneapi@=2023.2.0
+      dpcpp2023:
+        spack_spec: dpcpp@=2023.2.0
+        compiler_spec: dpcpp@=2023.2.0
+      rocmcc54:
+        spack_spec: rocmcc@5.4.1
+        compiler_spec: rocmcc@5.4.1
+      babelstream-{stream_models}-{compiler_list}:
+        spack_spec: 'babelstream@5.0 {stream_variants}'
+        compiler: '{compiler_list}'
+      babelstream-fortran-{stream_models}-{compiler_list}:
+        spack_spec: 'babelstream@5.0 build_system=makefile foption={stream_variants} {f_extra}'
+        compiler: '{compiler_list}'
+    environments:
+      'babelstream-{stream_models}-{compiler_list}':
+        packages:
+        - 'babelstream-{stream_models}-{compiler_list}'
+      'babelstream-fortran-{stream_models}-{compiler_list}':
+        packages:
+        - 'babelstream-fortran-{stream_models}-{compiler_list}'
