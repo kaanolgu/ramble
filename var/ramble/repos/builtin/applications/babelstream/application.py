@@ -74,7 +74,7 @@ class Babelstream(SpackApplication):
 
     workload_variable('partition',
                       description='Define which partition we are going to use for execution',
-                      default='milan', workloads=['cpp-models', 'fortran-models','print-csv'])
+                      default='milan', workloads=['cpp-models', 'fortran-models'])
 
 #  BabelStream
 #  Version: 5.0
